@@ -703,6 +703,17 @@
                 return;
             }
 
+            // Ensure month/year are selected before proceeding
+            const selMonth = monthSelector ? String(monthSelector.value).padStart(2, '0') : '';
+            const selYear = yearSelector ? yearSelector.value : '';
+            if (!selMonth || !selYear) {
+                if (errorMessage) {
+                    errorMessage.textContent = 'שגיאה: יש לבחור חודש ושנה לפני טעינת קובץ.';
+                    errorMessage.classList.remove('hidden');
+                }
+                return;
+            }
+
             // Validate the file type to ensure it's an Excel file
             const fileType = file.name.split('.').pop().toLowerCase();
             if (fileType !== 'xlsx' && fileType !== 'xls' && fileType !== 'csv' && fileType !== 'xml') { // Added XML
@@ -756,7 +767,7 @@
                         const worksheet = workbook.Sheets[firstSheetName];
                         json = XLSX.utils.sheet_to_json(worksheet);
                     }
-
+                    console.log('Uploading data for period:', `${selYear}-${selMonth}`, 'rows:', json.length);
                     window.processAndDisplayData(json, null);
                 } catch (error) {
                     console.error("Error reading or parsing file:", error);
@@ -1249,7 +1260,8 @@
                         window.db,
                         `artifacts/${window.appId}/users/${window.userId}/orders/${yearSelector.value}-${String(monthSelector.value).padStart(2, '0')}/items`
                     ); // Path uses YYYY-MM/items consistently
-                    await setDoc(doc(costsCollection, order.orderNumber), {
+                    const docId = `${order.orderNumber}`;
+                    await setDoc(doc(costsCollection, docId), {
                         orderNumber: order.orderNumber,
                         productName: order.productName,
                         orderTotalWithVAT: order.orderTotalWithVAT,
@@ -1262,7 +1274,9 @@
                         shippingCost: order.shippingCost, // Save before VAT
                         shippingCostWithVAT: order.shippingCostWithVAT, // Save with VAT
                         desiredProfitPercent: order.desiredProfitPercent, // Save desired profit percent
-                        monthYear: `${yearSelector.value}-${String(monthSelector.value).padStart(2, '0')}`
+                        monthYear: `${yearSelector.value}-${String(monthSelector.value).padStart(2, '0')}`,
+                        year: `${yearSelector.value}`,
+                        month: `${String(monthSelector.value).padStart(2, '0')}`
                     });
                 } catch (error) {
                     console.error("Error saving data for order", order.orderNumber, ":", error);
