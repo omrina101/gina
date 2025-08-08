@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מחשבון רווחיות הזמנות</title>
+    <!-- Tailwind CSS for responsive and modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS library for reading Excel files -->
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        /* Custom styles for Hebrew font and right-to-left layout */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
+            direction: rtl; /* Set overall direction to right-to-left for Hebrew */
+            text-align: right; /* Align text to the right by default */
+        }
+        /* Basic table styling */
+        table {
+            width: 100%;
+            border-collapse: collapse; /* Collapse borders for a cleaner look */
+            table-layout: fixed; /* Fixed layout for resizable columns */
+        }
+        th, td {
+            border: 1px solid #e2e8f0; /* Light gray border */
+            padding: 8px; /* Padding inside cells */
+            text-align: right; /* Align text in cells to the right */
+            word-wrap: break-word; /* Allow long words to break */
+            min-width: 60px; /* Minimum width for all columns */
+        }
+        th {
+            background-color: #f8fafc; /* Light background for table headers */
+            position: relative; /* Needed for resizer positioning */
+            width: auto; /* Allow browser to determine initial width based on content hints */
+        }
+        /* Specific styling for product name cell to truncate long text */
+        .product-name-cell {
+            max-width: 280px; /* Increased max-width for product name column */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap; /* Keep text on single line, then ellipsis */
+        }
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        /* Resizer styles */
+        .resizer {
+            position: absolute;
+            left: 0; /* Position on the left side of the th for RTL */
+            top: 0;
+            width: 5px; /* Width of the draggable area */
+            height: 100%;
+            background: transparent; /* Make it invisible initially */
+            cursor: col-resize;
+            z-index: 1; /* Ensure it's clickable */
+        }
+        .resizer:hover {
+            background-color: #a0aec0; /* Light gray on hover */
+        }
+        /* Add a class when dragging to make it more visible */
+        .resizing {
+            background-color: #4299e1; /* Blue when dragging */
+        }
+
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .modal-buttons {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-around;
+        }
+
+        /* Custom colors for VAT columns */
+        .vat-inclusive-header {
+            color: #ef4444; /* red-500 */
+        }
+        .vat-inclusive-cell {
+            color: #b91c1c; /* red-700 */
+            font-weight: 500; /* medium */
+        }
+        .vat-exclusive-header {
+            color: #22c55e; /* green-500 */
+        }
+        .vat-exclusive-cell {
+            color: #16a34a; /* green-700 */
+            font-weight: 500; /* medium */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="w-full mx-auto bg-white p-6 rounded-lg shadow-md"> <!-- Changed max-w-4xl to w-full -->
+        <h1 class="text-2xl font-bold mb-6 text-center">מחשבון רווחיות הזמנות</h1>
+
+        <div class="mb-4">
+            <label for="excelFile" class="block text-gray-700 text-sm font-bold mb-2">
+                העלה קובץ (XLSX, XLS, CSV, XML):
+            </label>
+            <input type="file" id="excelFile" accept=".xlsx, .xls, .csv, .xml" class="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-violet-50 file:text-violet-700
+                hover:file:bg-violet-100"/>
+            <p id="errorMessage" class="text-red-500 text-sm mt-2 hidden">שגיאה: ודא שהקובץ הוא בפורמט נתמך (XLSX, XLS, CSV, XML).</p>
+            <p id="loadingMessage" class="text-blue-600 text-sm mt-2">טוען Firebase...</p>
+        </div>
+
+        <div class="mb-4 text-center flex flex-wrap justify-start gap-4"> <!-- Changed justify-end to justify-start for RTL right alignment -->
+            <!-- Search input is now first in the flex container for RTL right alignment -->
+            <div class="relative">
+                <input type="text" id="searchInput" placeholder="חפש לפי מספר הזמנה..."
+                       class="w-full px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-violet-500 text-right"
+                       dir="rtl" onkeydown="if(event.key === 'Enter') { this.value = ''; }"> <!-- Added onkeydown to clear on Enter -->
+                <div class="absolute inset-y-0 left-0 flex items-center pr-3 pointer-events-none">
+                    <!-- Optional: Add a search icon here -->
+                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+            </div>
+            
+            <!-- Removed global desiredProfitPercentInput -->
+
+            <button id="resetDataButton" onclick="window.resetAllData()"
+                    class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+                איפוס כל הנתונים השמורים
+            </button>
+        </div>
+
+        <div class="mb-4 flex flex-wrap justify-start gap-4 items-center">
+            <label for="monthSelector" class="block text-gray-700 text-sm font-bold">חודש:</label>
+            <select id="monthSelector" class="p-2 border border-gray-300 rounded-md"></select>
+            
+            <label for="yearSelector" class="block text-gray-700 text-sm font-bold">שנה:</label>
+            <select id="yearSelector" class="p-2 border border-gray-300 rounded-md"></select>
+        </div>
+
+        <div id="resultsContainer" class="mt-8 hidden">
+            <h2 class="text-xl font-semibold mb-4">תוצאות חישוב הרווחיות</h2>
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                <table id="profitTable" class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider relative">מספר הזמנה<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider relative">שם מוצר<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-inclusive-header">סכום ההזמנה (כולל מע"מ)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-inclusive-header">מחיר משלוח (ששולם ע"י לקוח, כולל מע"מ)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-exclusive-header">מחיר עלות (לפני מע"מ)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-inclusive-header">מחיר עלות (כולל מע"מ)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-exclusive-header">עלות משלוח (לפני מע"מ)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-inclusive-header">עלות משלוח (כולל מע"מ)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-exclusive-header">סה"כ רווח (לפני מע"מ)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-exclusive-header">רווח ממחיר מכירה (%)<div class="resizer"></div></th>
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-exclusive-header">אחוז רווחיות רצוי (%)<div class="resizer"></div></th> <!-- New column header -->
+                            <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider rounded-tl-lg vat-exclusive-header">רווח ממחיר עלות (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="profitTableBody" class="bg-white divide-y divide-gray-200">
+                        <!-- Data will be dynamically inserted here by JavaScript -->
+                    </tbody>
+                    <tfoot class="bg-gray-100">
+                        <tr>
+                            <td colspan="9" class="px-6 py-3 text-right text-sm font-bold text-gray-700">סה"כ רווח כולל (לפני מע"מ):</td> <!-- Colspan updated to 9 -->
+                            <td id="overallTotalProfit" class="px-6 py-3 text-right text-sm font-bold text-gray-900 vat-exclusive-cell">0.00</td>
+                            <td colspan="2" class="px-6 py-3"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <!-- New Summary Section -->
+            <div id="summarySection" class="mt-8 p-6 bg-blue-50 rounded-lg shadow-inner hidden">
+                <h2 class="text-xl font-semibold mb-4 text-blue-800">סיכום כללי</h2>
+
+                <div class="mb-6 border-b pb-4 border-blue-200">
+                    <h3 class="text-lg font-medium mb-2 text-blue-700">סיכום לפני הזנת עלויות ידניות:</h3>
+                    <p class="text-gray-800"><strong>מחזור כולל (לפני מע"מ):</strong> <span id="initialRevenueSummary" class="vat-exclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>מחזור כולל (כולל מע"מ):</strong> <span id="initialRevenueSummaryWithVAT" class="vat-inclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>סה"כ רווח משלוח ששולם ע"י לקוח (לפני מע"מ):</strong> <span id="initialCustomerShippingProfitSummary" class="vat-exclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>סה"כ רווח משלוח ששולם ע"י לקוח (כולל מע"מ):</strong> <span id="initialCustomerShippingProfitSummaryWithVAT" class="vat-inclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>אחוז רווחיות משלוח (ששולם ע"י לקוח):</strong> <span id="initialCustomerShippingProfitPercentSummary" class="vat-exclusive-cell">0.00%</span></p>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-medium mb-2 text-blue-700">סיכום לאחר הזנת עלויות ידניות:</h3>
+                    <p class="text-gray-800"><strong>מחזור כולל (לפני מע"מ):</strong> <span id="finalRevenueSummary" class="vat-exclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>מחזור כולל (כולל מע"מ):</strong> <span id="finalRevenueSummaryWithVAT" class="vat-inclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>סה"כ רווח נקי (לפני מע"מ):</strong> <span id="finalNetProfitSummary" class="vat-exclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>סה"כ רווח נקי (כולל מע"מ):</strong> <span id="finalNetProfitSummaryWithVAT" class="vat-inclusive-cell">0.00</span></p>
+                    <p class="text-gray-800"><strong>אחוז רווחיות נקי:</strong> <span id="finalNetProfitPercentSummary" class="vat-exclusive-cell">0.00%</span></p>
+                </div>
+                
+                <!-- AI Insights Section -->
+                <div class="mt-6 pt-4 border-t border-blue-200">
+                    <button id="getInsightsButton"
+                            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+                        קבל תובנות רווחיות ✨
+                    </button>
+                    <div id="profitInsightsOutput" class="mt-4 p-3 bg-purple-50 rounded-lg text-sm text-gray-800 text-right">
+                        <!-- AI insights will be displayed here -->
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="mt-4 text-sm text-gray-600">
+                <p><strong>הערה:</strong> החישובים מבוססים על ההנחות הבאות:</p>
+                <ul class="list-disc list-inside">
+                    <li><strong>שיעור מע"מ:</strong> 18%</li>
+                    <li><strong>סכום ההזמנה (כולל מע"מ):</strong> סך כל הסכום ששילם הלקוח עבור ההזמנה, כפי שמופיע בקובץ האקסל.</li>
+                    <li><strong>מחיר משלוח (ששולם ע"י לקוח, כולל מע"מ):</strong> סכום ההזמנה - מחיר מוצר (כולל מע"מ).</li>
+                    <li><strong>מחיר עלות (לפני מע"מ / כולל מע"מ):</strong> עלות רכישת המוצר. ניתן להזין באחד מהפורמטים, והשני יחושב אוטומטית.</li>
+                    <li><strong>עלות משלוח (לפני מע"מ / כולל מע"מ):</strong> עלות המשלוח בפועל ששולמה על ידך. ניתן להזין באחד מהפורמטים, והשני יחושב אוטומטית.</li>
+                    <li><strong>סה"כ רווח (לפני מע"מ):</strong> (סכום ההזמנה לפני מע"מ) - מחיר עלות (לפני מע"מ) - עלות משלוח (לפני מע"מ).</li>
+                    <li><strong>רווח ממחיר מכירה (%):</strong> ((סכום ההזמנה לפני מע"מ - מחיר משלוח ששולם ע"י לקוח, לפני מע"מ) - מחיר עלות (לפני מע"מ)) / (סכום ההזמנה לפני מע"מ - מחיר משלוח (ששולם ע"י לקוח, לפני מע"מ)) * 100.</li>
+                    <li><strong>רווח ממחיר עלות (%):</strong> ((סכום ההזמנה לפני מע"מ) - מחיר עלות (לפני מע"מ) - עלות משלוח (לפני מע"מ)) / מחיר עלות (לפני מע"מ) * 100.</li>
+                    <li><strong>אחוז רווחיות רצוי (%):</strong> אחוז רווחיות רצוי ממחיר המכירה. הזנה בשדה זה תחשב מחדש את "מחיר עלות" עבור ההזמנה הספציפית.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmationModal" class="modal hidden">
+        <div class="modal-content">
+            <p id="modalMessage" class="text-lg font-semibold mb-4"></p>
+            <div class="modal-buttons">
+                <button id="confirmResetButton" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+                    אשר איפוס
+                </button>
+                <button id="cancelResetButton" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+                    ביטול
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase variables
+        window.firebaseApp = null;
+        window.db = null;
+        window.auth = null;
+        window.userId = null;
+        window.isAuthReady = false;
+        window.ordersData = []; // Global store for all loaded order data
+
+        // Define VAT rate globally as it's used in processAndDisplayData
+        window.VAT_RATE = 0.18; // 18% VAT
+
+        // Declare DOM element references globally
+        let excelFileInput, profitTableBody, resultsContainer, errorMessage, overallTotalProfitElement, summarySection,
+            initialRevenueSummary, initialCustomerShippingProfitSummary, initialCustomerShippingProfitPercentSummary,
+            finalRevenueSummary, finalNetProfitSummary, finalNetProfitPercentSummary, loadingMessage, searchInput,
+            initialRevenueSummaryWithVAT, initialCustomerShippingProfitSummaryWithVAT, finalRevenueSummaryWithVAT,
+            finalNetProfitSummaryWithVAT, profitInsightsOutput, getInsightsButton; // Added new elements
+
+        // New: Month and Year selectors
+        let monthSelector, yearSelector;
+
+
+        // Global variables for resizing
+        let thBeingResized = null;
+        let startX = 0;
+        let startWidth = 0;
+        let currentColumn = null;
+
+        // Initialize Firebase and authenticate
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Assign DOM elements here, after the DOM is fully loaded
+            excelFileInput = document.getElementById('excelFile');
+            profitTableBody = document.getElementById('profitTableBody');
+            resultsContainer = document.getElementById('resultsContainer');
+            errorMessage = document.getElementById('errorMessage');
+            overallTotalProfitElement = document.getElementById('overallTotalProfit');
+            summarySection = document.getElementById('summarySection');
+            initialRevenueSummary = document.getElementById('initialRevenueSummary');
+            initialCustomerShippingProfitSummary = document.getElementById('initialCustomerShippingProfitSummary');
+            initialCustomerShippingProfitPercentSummary = document.getElementById('initialCustomerShippingProfitPercentSummary');
+            finalRevenueSummary = document.getElementById('finalRevenueSummary');
+            finalNetProfitSummary = document.getElementById('finalNetProfitSummary');
+            finalNetProfitPercentSummary = document.getElementById('finalNetProfitPercentSummary');
+            loadingMessage = document.getElementById('loadingMessage');
+            searchInput = document.getElementById('searchInput');
+            profitInsightsOutput = document.getElementById('profitInsightsOutput');
+            getInsightsButton = document.getElementById('getInsightsButton');
+
+            // New: Assign month/year selectors
+            monthSelector = document.getElementById('monthSelector');
+            yearSelector = document.getElementById('yearSelector');
+
+
+            initialRevenueSummaryWithVAT = document.getElementById('initialRevenueSummaryWithVAT');
+            initialCustomerShippingProfitSummaryWithVAT = document.getElementById('initialCustomerShippingProfitSummaryWithVAT');
+            finalRevenueSummaryWithVAT = document.getElementById('finalRevenueSummaryWithVAT');
+            finalNetProfitSummaryWithVAT = document.getElementById('finalNetProfitSummaryWithVAT');
+
+            // Attach event listeners here, after elements are assigned
+            if (excelFileInput) excelFileInput.addEventListener('change', handleFile);
+            if (searchInput) searchInput.addEventListener('input', filterTable);
+            if (getInsightsButton) getInsightsButton.addEventListener('click', getProfitInsights);
+
+            // New: Attach listeners for month/year selectors
+            if (monthSelector) monthSelector.addEventListener('change', handleMonthYearChange);
+            if (yearSelector) yearSelector.addEventListener('change', handleMonthYearChange);
+
+
+            // Attach reset button listener using addEventListener for robustness
+            const resetButton = document.getElementById('resetDataButton');
+            if (resetButton) {
+                resetButton.addEventListener('click', window.resetAllData);
+            } else {
+                console.error("Reset button not found in DOM.");
+            }
+
+            // Populate month/year selectors and set default
+            populateMonthYearSelectors();
+
+            // Check if page is loaded from file:// protocol and show warning
+            if (window.location.protocol === 'file:') {
+                if (errorMessage) {
+                    errorMessage.textContent = 'שגיאה: הדף נטען ישירות מקובץ. כדי לאפשר שמירת נתונים, אנא הפעל שרת לוקלי (לדוגמה, `python -m http.server`) ופתח את הדף דרך `http://localhost:8000/`.';
+                    errorMessage.classList.remove('hidden');
+                }
+                if (loadingMessage) loadingMessage.classList.add('hidden'); // Hide loading message if file protocol error
+                return; // Stop Firebase initialization if running from file://
+            }
+
+
+            try {
+                const firebaseConfig = {
+                    apiKey: "AIzaSyCEj54NFnTL6s4aNaSWwKrwFfGAa9BEAQQ",
+                    authDomain: "gina-c5337.firebaseapp.com",
+                      projectId: "gina-c5337",
+                    storageBucket: "gina-c5337.firebasestorage.app",
+                     messagingSenderId: "778202600541",
+                     appId: "1:778202600541:web:77e0f37ce46118dc4fe9b4",
+                     measurementId: "G-XKG4HNPYHE"
+                };
+
+                // Set window.appId here, ensuring it's accessible globally for Firestore paths
+                window.appId = firebaseConfig.appId; 
+
+                if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) { // Added check for apiKey
+                    console.error("Firebase config is missing or incomplete. Data persistence will not work.");
+                    if (loadingMessage) loadingMessage.textContent = 'שגיאה: הגדרות Firebase חסרות או שגויות. שמירת נתונים לא תעבוד.';
+                    return;
+                }
+
+                window.firebaseApp = initializeApp(firebaseConfig);
+                window.db = getFirestore(window.firebaseApp);
+                window.auth = getAuth(window.firebaseApp);
+
+                onAuthStateChanged(window.auth, async (user) => {
+                    if (user) {
+                        window.userId = user.uid;
+                        window.isAuthReady = true;
+                        console.log("Firebase authenticated. User ID:", window.userId);
+                        if (loadingMessage) loadingMessage.textContent = 'Firebase טעון ומוכן. טוען נתונים שמורים...';
+                        await loadSavedData(); // Load data once authenticated
+                    } else {
+                        try {
+                            // For local execution, we always try to sign in anonymously if not already signed in.
+                            await signInAnonymously(window.auth);
+                        } catch (error) {
+                            console.error("Error signing in anonymously:", error);
+                            if (loadingMessage) loadingMessage.textContent = 'שגיאה בהתחברות ל-Firebase. שמירת נתונים לא תעבוד.';
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                if (loadingMessage) loadingMessage.textContent = 'שגיאה באתחול Firebase. שמירת נתונים לא תעבוד.';
+            }
+        });
+
+        /**
+         * Populates the month and year dropdowns and sets default values.
+         */
+        function populateMonthYearSelectors() {
+            const months = [
+                { value: 1, name: 'ינואר' }, { value: 2, name: 'פברואר' }, { value: 3, name: 'מרץ' },
+                { value: 4, name: 'אפריל' }, { value: 5, name: 'מאי' }, { value: 6, name: 'יוני' },
+                { value: 7, name: 'יולי' }, { value: 8, name: 'אוגוסט' }, { value: 9, name: 'ספטמבר' },
+                { value: 10, name: 'אוקטובר' }, { value: 11, name: 'נובמבר' }, { value: 12, name: 'דצמבר' }
+            ];
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth() + 1; // Month is 0-indexed
+
+            // Populate Months
+            months.forEach(month => {
+                const option = document.createElement('option');
+                option.value = month.value;
+                option.textContent = month.name;
+                if (monthSelector) monthSelector.appendChild(option);
+            });
+
+            // Populate Years (e.g., current year +/- 5 years)
+            for (let i = currentYear - 5; i <= currentYear + 5; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                if (yearSelector) yearSelector.appendChild(option);
+            }
+
+            // Restore last selected month/year if available
+            const savedMY = localStorage.getItem('pc:lastMonthYear'); // format YYYY-MM
+            if (savedMY) {
+                const [yy, mm] = savedMY.split('-');
+                if (yearSelector) yearSelector.value = yy;
+                if (monthSelector) monthSelector.value = String(parseInt(mm, 10));
+            } else {
+                // Default to current
+                if (yearSelector) yearSelector.value = String(currentYear);
+                if (monthSelector) monthSelector.value = String(currentMonth);
+            }
+        }
+
+        /**
+         * Handles change in month or year selector.
+         */
+        async function handleMonthYearChange() {
+            // Persist selection
+            const mm = String(monthSelector.value).padStart(2, '0');
+            const yy = String(yearSelector.value);
+            localStorage.setItem('pc:lastMonthYear', `${yy}-${mm}`);
+            await loadSavedData(); // Reload data for the newly selected month/year
+        }
+
+        /**
+         * Loads saved order data from Firestore and populates the table.
+         */
+        async function loadSavedData() {
+            if (!window.isAuthReady || !window.db || !window.userId) {
+                console.warn("Firebase not ready or user not authenticated for loading data.");
+                return;
+            }
+
+            const selectedMonth = monthSelector ? String(monthSelector.value).padStart(2, '0') : '';
+            const selectedYear = yearSelector ? yearSelector.value : '';
+            const monthYearPath = `${selectedYear}-${selectedMonth}`;
+
+            if (!selectedMonth || !selectedYear) {
+                if (errorMessage) errorMessage.textContent = 'שגיאה: יש לבחור חודש ושנה.';
+                if (errorMessage) errorMessage.classList.remove('hidden');
+                return;
+            }
+
+
+            if (loadingMessage) loadingMessage.textContent = `טוען נתונים עבור ${selectedMonth}/${selectedYear}...`;
+            if (loadingMessage) loadingMessage.classList.remove('hidden');
+            if (profitTableBody) profitTableBody.innerHTML = ''; // Clear existing table rows
+            if (resultsContainer) resultsContainer.classList.add('hidden');
+            if (summarySection) summarySection.classList.add('hidden');
+            window.ordersData = []; // Clear previous data
+
+            try {
+                // Construct the collection path including the selected month and year
+                const ordersCollectionRef = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${monthYearPath}`);
+                const querySnapshot = await getDocs(ordersCollectionRef);
+                const loadedData = [];
+                querySnapshot.forEach(docSnap => {
+                    loadedData.push(docSnap.data());
+                });
+
+                if (loadedData.length > 0) {
+                    await window.processAndDisplayData(loadedData, loadedData);
+                } else {
+                    // Fallback to localStorage snapshot
+                    const local = loadSnapshotFromLocal(monthYearPath);
+                    if (local && local.length) {
+                        await window.processAndDisplayData(local, local);
+                        if (loadingMessage) loadingMessage.textContent = `נטענו נתונים מקומיים עבור ${selectedMonth}/${selectedYear}.`;
+                    } else if (loadingMessage) {
+                        loadingMessage.textContent = `אין נתונים שמורים עבור ${selectedMonth}/${selectedYear}. העלה קובץ כדי להתחיל.`;
+                    }
+                }
+            } catch (error) {
+                console.error("Error loading saved data:", error);
+                // Fallback to localStorage snapshot on error
+                const local = loadSnapshotFromLocal(monthYearPath);
+                if (local && local.length) {
+                    await window.processAndDisplayData(local, local);
+                    if (loadingMessage) loadingMessage.textContent = `נטענו נתונים מקומיים עבור ${selectedMonth}/${selectedYear}.`;
+                } else if (loadingMessage) {
+                    loadingMessage.textContent = 'שגיאה בטעינת נתונים שמורים. נסה שוב מאוחר יותר.';
+                }
+            } finally {
+                if (loadingMessage) loadingMessage.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Clears all saved data from Firestore and resets the UI.
+         */
+        window.resetAllData = async function() {
+            // Show confirmation modal
+            const confirmationModal = document.getElementById('confirmationModal');
+            const modalMessage = document.getElementById('modalMessage');
+            const confirmResetButton = document.getElementById('confirmResetButton');
+            const cancelResetButton = document.getElementById('cancelResetButton');
+
+            if (confirmationModal) confirmationModal.classList.remove('hidden');
+            
+            const selectedMonth = monthSelector ? String(monthSelector.value).padStart(2, '0') : '';
+            const selectedYear = yearSelector ? yearSelector.value : '';
+            const monthYearPath = `${selectedYear}-${selectedMonth}`;
+
+            if (modalMessage) modalMessage.textContent = `האם אתה בטוח שברצונך לאפס את כל הנתונים עבור ${selectedMonth}/${selectedYear}? פעולה זו בלתי הפיכה.`;
+
+
+            if (confirmResetButton) {
+                confirmResetButton.onclick = async () => {
+                    if (confirmationModal) confirmationModal.classList.add('hidden');
+                    if (!window.isAuthReady || !window.db || !window.userId) {
+                        if (errorMessage) {
+                            errorMessage.textContent = 'שגיאה: Firebase אינו מוכן. לא ניתן לאפס נתונים.';
+                            errorMessage.classList.remove('hidden');
+                        }
+                        return;
+                    }
+
+                    if (loadingMessage) loadingMessage.textContent = `מאפס נתונים עבור ${selectedMonth}/${selectedYear}...`;
+                    if (loadingMessage) loadingMessage.classList.remove('hidden');
+                    try {
+                        // Construct the collection path including the selected month and year
+                        const ordersCollectionRef = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${monthYearPath}`);
+                        const querySnapshot = await getDocs(ordersCollectionRef);
+                        const deletePromises = [];
+                        querySnapshot.forEach(docSnap => {
+                            deletePromises.push(deleteDoc(doc(ordersCollectionRef, docSnap.id)));
+                        });
+                        await Promise.all(deletePromises);
+
+                        // Clear UI after successful deletion
+                        if (profitTableBody) profitTableBody.innerHTML = '';
+                        if (resultsContainer) resultsContainer.classList.add('hidden');
+                        if (summarySection) summarySection.classList.add('hidden');
+                        window.ordersData = [];
+                        if (overallTotalProfitElement) overallTotalProfitElement.textContent = '0.00';
+                        if (loadingMessage) loadingMessage.textContent = `כל הנתונים עבור ${selectedMonth}/${selectedYear} אופסו בהצלחה.`;
+                    } catch (error) {
+                        console.error("Error resetting data:", error);
+                        if (errorMessage) {
+                            errorMessage.textContent = 'שגיאה באיפוס נתונים. נסה שוב מאוחר יותר.';
+                            errorMessage.classList.remove('hidden');
+                        }
+                    } finally {
+                        if (loadingMessage) loadingMessage.classList.add('hidden');
+                    }
+                };
+            }
+
+
+            if (cancelResetButton) {
+                cancelResetButton.onclick = () => {
+                    if (confirmationModal) confirmationModal.classList.add('hidden');
+                };
+            }
+        };
+
+        /**
+         * Attaches resizer functionality to table headers.
+         * This function should be called once the table headers are in the DOM.
+         */
+        function attachResizers() {
+            const headers = document.querySelectorAll('#profitTable thead th');
+            headers.forEach((header, index) => {
+                // The last column typically doesn't have a resizer as it takes remaining space
+                if (index < headers.length - 1) {
+                    let resizer = header.querySelector('.resizer');
+                    if (!resizer) {
+                        resizer = document.createElement('div');
+                        resizer.classList.add('resizer');
+                        header.appendChild(resizer);
+                    }
+
+                    resizer.addEventListener('mousedown', (e) => {
+                        currentColumn = header;
+                        startX = e.clientX;
+                        startWidth = currentColumn.offsetWidth;
+                        currentColumn.classList.add('resizing');
+                        document.addEventListener('mousemove', doResize);
+                        document.addEventListener('mouseup', stopResize);
+                    });
+                }
+            });
+        }
+
+        /**
+         * Handles the mousemove event during column resizing.
+         * @param {MouseEvent} e - The mouse event object.
+         */
+        function doResize(e) {
+            if (currentColumn) {
+                const diffX = startX - e.clientX; // Calculate difference for RTL
+                let newWidth = startWidth + diffX;
+                const minWidth = 50; // Minimum width in pixels for a column
+
+                if (newWidth < minWidth) {
+                    newWidth = minWidth;
+                }
+                currentColumn.style.width = `${newWidth}px`;
+            }
+        }
+
+        /**
+         * Handles the mouseup event, ending column resizing.
+         */
+        function stopResize() {
+            if (currentColumn) {
+                currentColumn.classList.remove('resizing');
+                currentColumn = null;
+                document.removeEventListener('mousemove', doResize);
+                document.removeEventListener('mouseup', stopResize);
+            }
+        }
+
+        // Call attachResizers once the DOM is fully loaded and table headers are present
+        document.addEventListener('DOMContentLoaded', attachResizers);
+
+
+        /**
+         * Handles the file input change event.
+         * This function reads the uploaded Excel file and initiates the data processing.
+         * @param {Event} event - The change event object from the file input.
+         */
+        function handleFile(event) {
+            const file = event.target.files[0]; // Get the first file selected by the user
+
+            // Hide any previous error messages and clear the table and summary
+            if (errorMessage) errorMessage.classList.add('hidden');
+            if (profitTableBody) profitTableBody.innerHTML = '';
+            if (resultsContainer) resultsContainer.classList.add('hidden');
+            if (summarySection) summarySection.classList.add('hidden'); // Hide summary section initially
+            window.ordersData = []; // Clear previous data
+            if (overallTotalProfitElement) overallTotalProfitElement.textContent = '0.00'; // Reset total profit
+            if (searchInput) searchInput.value = ''; // Clear search input on new file upload
+
+            // If no file was selected, exit the function
+            if (!file) {
+                return;
+            }
+
+            // Validate the file type to ensure it's an Excel file
+            const fileType = file.name.split('.').pop().toLowerCase();
+            if (fileType !== 'xlsx' && fileType !== 'xls' && fileType !== 'csv' && fileType !== 'xml') { // Added XML
+                if (errorMessage) {
+                    errorMessage.textContent = 'שגיאה: אנא העלה קובץ בפורמט XLSX, XLS, CSV או XML.';
+                    errorMessage.classList.remove('hidden');
+                }
+                return;
+            }
+
+            // Special robust path for XML: smart decode with multiple encodings
+            if (fileType === 'xml') {
+                readFileAsTextSmart(file)
+                  .then((xmlString) => {
+                    try {
+                      const json = parseXmlToJson(xmlString);
+                      if (!json || json.length === 0) {
+                        if (errorMessage) {
+                          errorMessage.textContent = 'שגיאה: קובץ ה-XML ריק או בפורמט לא נתמך. ודא שהוא מכיל תגיות <order> עם <orderid>, <items><item><itemname></itemname><price></price></item> ו-<ordersum>. אם הבעיה נמשכת, שמור את הקובץ בקידוד UTF-8.';
+                          errorMessage.classList.remove('hidden');
+                        }
+                        return;
+                      }
+                      window.processAndDisplayData(json, null);
+                    } catch (err) {
+                      console.error('Error parsing XML:', err);
+                      if (errorMessage) {
+                        errorMessage.textContent = 'שגיאה בניתוח קובץ ה-XML. ייתכן שהקובץ אינו בקידוד UTF-8. נסה להמיר ל-UTF-8 ולנסות שוב.';
+                        errorMessage.classList.remove('hidden');
+                      }
+                    }
+                  })
+                  .catch((err) => {
+                    console.error('Error reading XML file:', err);
+                    if (errorMessage) {
+                      errorMessage.textContent = 'שגיאה בקריאת קובץ ה-XML. נסה לשמור אותו כ-UTF-8 ולנסות שוב.';
+                      errorMessage.classList.remove('hidden');
+                    }
+                  });
+                return; // Do not proceed to the generic reader path
+            }
+
+            const reader = new FileReader(); // Generic reader for Excel/CSV
+            reader.onload = function(e) {
+                try {
+                    let json = [];
+                    if (fileType === 'xlsx' || fileType === 'xls' || fileType === 'csv') {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        json = XLSX.utils.sheet_to_json(worksheet);
+                    }
+
+                    window.processAndDisplayData(json, null);
+                } catch (error) {
+                    console.error("Error reading or parsing file:", error);
+                    if (errorMessage) {
+                        errorMessage.textContent = 'שגיאה בעת קריאה או ניתוח הקובץ. ודא שהוא תקין ומכיל נתונים בפורמט צפוי.';
+                        errorMessage.classList.remove('hidden');
+                    }
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        /**
+         * Helper function to parse XML string into a JSON array of objects.
+         * Assumes a structure like <orders><order><orderid>...</orderid>...</order></orders>
+         * @param {string} xmlString - The XML content as a string.
+         * @returns {Array<Object>} An array of objects, each representing an order.
+         */
+        // Helpers for robust XML decoding
+        function sanitizeXml(txt) {
+            return txt.replace(/[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD]/g, '');
+        }
+
+        function detectDeclaredEncoding(bytes) {
+            try {
+                const head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
+                const m = head.match(/<\?xml[^>]*encoding=['"]([^'\"]+)['"][^>]*\?>/i);
+                return m ? m[1].toLowerCase() : null;
+            } catch { return null; }
+        }
+
+        function decodeWithFallbacks(bytes, candidates) {
+            for (const enc of candidates) {
+                try {
+                    const dec = new TextDecoder(enc);
+                    return dec.decode(bytes);
+                } catch {}
+            }
+            return new TextDecoder().decode(bytes);
+        }
+
+        function readFileAsTextSmart(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        let bytes = new Uint8Array(e.target.result);
+                        if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+                            bytes = bytes.slice(3);
+                        }
+                        const declared = detectDeclaredEncoding(bytes);
+                        const candidates = [declared || 'utf-8', 'utf-8', 'windows-1255', 'iso-8859-8', 'windows-1252'];
+                        let text = decodeWithFallbacks(bytes, candidates);
+                        text = sanitizeXml(text);
+                        resolve(text);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = () => reject(new Error('שגיאה בקריאת הקובץ'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function parseXmlToJson(xmlString) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlString, "application/xml");
+            const result = [];
+
+            // Check for XML parsing errors
+            const parserError = xmlDoc.getElementsByTagName("parsererror");
+            if (parserError.length > 0) {
+                console.error("XML parsing error:", parserError[0].textContent);
+                throw new Error("שגיאה בניתוח קובץ ה-XML. ודא שהקובץ תקין ובקידוד UTF-8.");
+            }
+
+            // Try to get the <orders> root, otherwise assume <order> is direct child of root
+            const ordersRoot = xmlDoc.getElementsByTagName("orders")[0] || xmlDoc.documentElement; 
+            if (!ordersRoot) {
+                console.error("XML: Could not find <orders> root or document element.");
+                return [];
+            }
+
+            const orders = ordersRoot.getElementsByTagName("order");
+
+            for (let i = 0; i < orders.length; i++) {
+                const orderElement = orders[i];
+                // Use optional chaining and trim/replace CDATA
+                const orderNumber = orderElement.getElementsByTagName("orderid")[0]?.textContent?.replace('<![CDATA[', '').replace(']]>', '').trim() || '';
+                const orderTotalWithVAT_OrderLevel = parseFloat(orderElement.getElementsByTagName("ordersum")[0]?.textContent?.replace('<![CDATA[', '').replace(']]>', '').trim()) || 0;
+
+                const itemsElement = orderElement.getElementsByTagName("items")[0];
+                let totalProductPriceFromItems_OrderLevel = 0; // Sum of all item prices from XML for this order
+                const orderItems = []; // To store individual items for proportional allocation
+
+                if (itemsElement) {
+                    const itemNodes = itemsElement.getElementsByTagName("item");
+                    for (let j = 0; j < itemNodes.length; j++) {
+                        const item = itemNodes[j];
+                        const itemName = item.getElementsByTagName("itemname")[0]?.textContent?.replace('<![CDATA[', '').replace(']]>', '').trim() || '';
+                        const itemPrice = parseFloat(item.getElementsByTagName("price")[0]?.textContent?.replace('<![CDATA[', '').replace(']]>', '').trim()) || 0;
+                        const quantity = parseFloat(item.getElementsByTagName("quantity")[0]?.textContent?.replace('<![CDATA[', '').replace(']]>', '').trim()) || 1; // Assume quantity 1 if not present
+
+                        const itemTotalPriceLine = itemPrice * quantity; // Calculate total price for this item line
+                        totalProductPriceFromItems_OrderLevel += itemTotalPriceLine;
+                        orderItems.push({
+                            itemName: itemName,
+                            itemTotalPriceLine: itemTotalPriceLine
+                        });
+                    }
+                }
+
+                // Calculate customer paid shipping at the order level
+                const customerPaidShipping_OrderLevel = orderTotalWithVAT_OrderLevel - totalProductPriceFromItems_OrderLevel;
+
+                // Now, split into individual rows and apply proportional allocation
+                if (orderItems.length === 0) {
+                    // Handle case where an order has no items but still has an order sum
+                    result.push({
+                        'מספר הזמנה': orderNumber,
+                        'שם מוצר': 'אין מוצרים', // Or some placeholder
+                        'סכום ההזמנה': orderTotalWithVAT_OrderLevel,
+                        'מחיר': 0 // No product price if no items
+                    });
+                } else {
+                    orderItems.forEach(item => {
+                        const proportion = totalProductPriceFromItems_OrderLevel !== 0 ? (item.itemTotalPriceLine / totalProductPriceFromItems_OrderLevel) : 0;
+                        
+                        // Allocate order total and customer paid shipping proportionally to each item
+                        const allocatedOrderTotalWithVAT = orderTotalWithVAT_OrderLevel * proportion;
+                        const allocatedCustomerPaidShippingWithVAT = customerPaidShipping_OrderLevel * proportion;
+
+                        result.push({
+                            'מספר הזמנה': orderNumber,
+                            'שם מוצר': item.itemName,
+                            'סכום ההזמנה': allocatedOrderTotalWithVAT, // This item's share of the total order sum
+                            'מחיר': item.itemTotalPriceLine // This item's actual price from XML
+                        });
+                    });
+                }
+            }
+            console.log("XML Parsing Debug: Final JSON Result from parseXmlToJson:", result); // Debug log
+            return result;
+        }
+
+
+        /**
+         * Helper function to find the correct column name in the Excel data,
+         * accounting for potential leading/trailing spaces or slight variations.
+         * @param {Array<string>} headers - An array of column headers from the Excel file.
+         * @param {Array<string>} possibleNames - An array of possible expected column names.
+         * @returns {string|null} The actual column name found, or null if not found.
+         */
+        function findColumnName(headers, possibleNames) {
+            for (const expectedName of possibleNames) {
+                for (const header of headers) {
+                    // Normalize both the header from Excel and the expected name for comparison
+                    if (header.trim() === expectedName.trim()) {
+                        return header; // Return the exact header as it appears in the Excel file
+                    }
+                }
+            }
+            return null; // Column not found
+        }
+
+        /**
+         * Processes the parsed JSON data from the Excel file or loaded saved data and updates the HTML table.
+         * It populates the table rows with data and input fields for manual entry.
+         * @param {Array<Object>} data - An array of objects, where each object represents a row from the Excel sheet
+         * or a saved order object from Firestore.
+         * @param {Array<Object>|null} loadedSavedData - Optional: Array of previously saved data from Firestore.
+         * Used to pre-fill manual input fields.
+         */
+        window.processAndDisplayData = async function(data, loadedSavedData = null) { // Made global
+            // If no data is found or the array is empty, display an message
+            if (data.length === 0) {
+                if (errorMessage) {
+                    errorMessage.textContent = 'הקובץ שהועלה ריק או שאינו מכיל נתונים בפורמט צפוי.';
+                    errorMessage.classList.remove('hidden');
+                }
+                return;
+            }
+
+            let hasValidData = false; // Flag to check if any row contains valid data for processing
+            if (profitTableBody) profitTableBody.innerHTML = ''; // Clear existing table rows
+            window.ordersData = []; // Clear previous data before populating
+
+            // Determine if data is from Excel/CSV or loadedSavedData/XML
+            // Check if data[0] has 'orderNumber' (from loadedSavedData/Firestore) or 'מספר הזמנה' (from Excel/CSV/XML mapped)
+            // If loadedSavedData is provided, it's always from Firestore.
+            // If not loadedSavedData, check if it's XML (which parseXmlToJson already mapped to Hebrew keys).
+            const isLoadedFromFirestore = loadedSavedData !== null;
+            const isXmlMappedData = !isLoadedFromFirestore && data[0] && data[0]['מספר הזמנה'] !== undefined && data[0]['סכום ההזמנה'] !== undefined;
+            const isExcelOrCsvData = !isLoadedFromFirestore && !isXmlMappedData;
+
+            let orderNumberCol, productNameCol, orderTotalCol, productPriceCol;
+
+            if (isExcelOrCsvData) { // Data is from raw Excel/CSV
+                const excelHeaders = Object.keys(data[0]);
+                orderNumberCol = findColumnName(excelHeaders, ['מספר הזמנה', 'מספר הזמנה ']);
+                productNameCol = findColumnName(excelHeaders, ['שם מוצר', 'שם מוצר ']);
+                orderTotalCol = findColumnName(excelHeaders, ['סכום הזמנה', 'סכום הזמנה ', 'סכום ההזמנה', 'סכום ההזמנה ']);
+                productPriceCol = findColumnName(excelHeaders, ['מחיר', 'מחיר ']);
+
+                // Check if all required columns are found for Excel/CSV processing
+                if (!orderNumberCol || !productNameCol || !orderTotalCol || !productPriceCol) {
+                    let missingCols = [];
+                    if (!orderNumberCol) missingCols.push('"מספר הזמנה"');
+                    if (!productNameCol) missingCols.push('"שם מוצר"');
+                    if (!orderTotalCol) missingCols.push('"סכום הזמנה" או "סכום ההזמנה"');
+                    if (!productPriceCol) missingCols.push('"מחיר"');
+                    if (errorMessage) {
+                        errorMessage.textContent = `שגיאה: חסרות עמודות נדרשות בקובץ האקסל/CSV: ${missingCols.join(', ')}. ודא שהן קיימות בשמות המדויקים.`;
+                        errorMessage.classList.remove('hidden');
+                    }
+                    return;
+                }
+            }
+
+            for (const [index, row] of data.entries()) {
+                let orderNumber, productName, orderTotalWithVAT, productPriceWithVAT, customerPaidShippingWithVAT;
+
+                if (isLoadedFromFirestore) { // Data comes from Firestore
+                    orderNumber = String(row.orderNumber || '');
+                    productName = row.productName || '';
+                    orderTotalWithVAT = parseFloat(row.orderTotalWithVAT) || 0;
+                    customerPaidShippingWithVAT = parseFloat(row.customerPaidShippingWithVAT) || 0;
+                    productPriceWithVAT = orderTotalWithVAT - customerPaidShippingWithVAT; // Reconstruct product price
+                } else if (isXmlMappedData) { // Data comes from XML (already mapped by parseXmlToJson)
+                    orderNumber = String(row['מספר הזמנה'] || '');
+                    productName = row['שם מוצר'] || '';
+                    orderTotalWithVAT = parseFloat(row['סכום ההזמנה']) || 0;
+                    productPriceWithVAT = parseFloat(row['מחיר']) || 0; // 'מחיר' here is the sum of item prices from XML
+                    customerPaidShippingWithVAT = orderTotalWithVAT - productPriceWithVAT;
+                } else { // Data comes from raw Excel/CSV
+                    orderNumber = String(row[orderNumberCol] || '');
+                    productName = row[productNameCol] || '';
+                    orderTotalWithVAT = parseFloat(row[orderTotalCol]) || 0;
+                    productPriceWithVAT = parseFloat(row[productPriceCol]) || 0;
+                    customerPaidShippingWithVAT = orderTotalWithVAT - productPriceWithVAT;
+                }
+
+                // Calculate values before VAT
+                const orderTotalBeforeVAT = orderTotalWithVAT / (1 + window.VAT_RATE);
+                const productPriceBeforeVAT = productPriceWithVAT / (1 + window.VAT_RATE);
+                const customerPaidShippingBeforeVAT = customerPaidShippingWithVAT / (1 + window.VAT_RATE);
+
+                // Check if we have valid numeric data for calculations
+                if (orderTotalWithVAT > 0 || productPriceWithVAT > 0) {
+                    hasValidData = true;
+                }
+
+                const order = {
+                    orderNumber: orderNumber,
+                    productName: productName,
+                    orderTotalWithVAT: orderTotalWithVAT,
+                    customerPaidShippingWithVAT: customerPaidShippingWithVAT,
+                    orderTotalBeforeVAT: orderTotalBeforeVAT,
+                    productPriceBeforeVAT: productPriceBeforeVAT,
+                    customerPaidShippingBeforeVAT: customerPaidShippingBeforeVAT,
+                    productCost: 0, // Default to 0, will be overridden if saved data exists
+                    productCostWithVAT: 0, // New field
+                    shippingCost: 0, // Default to 0, will be overridden if saved data exists
+                    shippingCostWithVAT: 0, // New field
+                    desiredProfitPercent: 0, // New field for per-order desired profit
+                    totalProfit: 0,
+                    profitFromSalePricePercent: 0,
+                    profitFromCostPricePercent: 0
+                };
+                window.ordersData.push(order); // Add to global ordersData
+
+                // If loading from saved data, pre-fill costs and desired profit percent
+                if (loadedSavedData) {
+                    order.productCost = row.productCost !== undefined ? parseFloat(row.productCost) : 0;
+                    order.shippingCost = row.shippingCost !== undefined ? parseFloat(row.shippingCost) : 0;
+                    order.desiredProfitPercent = row.desiredProfitPercent !== undefined ? parseFloat(row.desiredProfitPercent) : 0; // Load desired profit percent
+                    // Also load the VAT inclusive versions if saved
+                    order.productCostWithVAT = row.productCostWithVAT !== undefined ? parseFloat(row.productCostWithVAT) : (order.productCost * (1 + window.VAT_RATE));
+                    order.shippingCostWithVAT = row.shippingCostWithVAT !== undefined ? parseFloat(row.shippingCostWithVAT) : (order.shippingCost * (1 + window.VAT_RATE));
+                } else {
+                    // For new Excel/CSV/XML data, initialize VAT inclusive costs based on VAT exclusive
+                    order.productCostWithVAT = order.productCost * (1 + window.VAT_RATE);
+                    order.shippingCostWithVAT = order.shippingCost * (1 + window.VAT_RATE);
+                }
+
+
+                // Create a new table row element
+                const rowElement = document.createElement('tr');
+                rowElement.id = `order-row-${index}`; // Assign a unique ID to the row
+                rowElement.classList.add('hover:bg-gray-50');
+
+                // Populate the inner HTML of the row with table data cells
+                rowElement.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${orderNumber}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900 product-name-cell">${productName}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 vat-inclusive-cell">${orderTotalWithVAT.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 vat-inclusive-cell">${customerPaidShippingWithVAT.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <input type="number" value="${order.productCost.toFixed(2)}" class="w-full p-1 border border-gray-300 rounded-md focus:ring-violet-500 focus:border-violet-500 text-green-700"
+                               data-index="${index}" data-field="productCost" oninput="window.updateRowProfit(this)">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <input type="number" value="${order.productCostWithVAT.toFixed(2)}" class="w-full p-1 border border-gray-300 rounded-md focus:ring-violet-500 focus:border-violet-500 text-red-700"
+                               data-index="${index}" data-field="productCostWithVAT" oninput="window.updateRowProfit(this)">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <input type="number" value="${order.shippingCost.toFixed(2)}" class="w-full p-1 border border-gray-300 rounded-md focus:ring-violet-500 focus:border-violet-500 text-green-700"
+                               data-index="${index}" data-field="shippingCost" oninput="window.updateRowProfit(this)">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <input type="number" value="${order.shippingCostWithVAT.toFixed(2)}" class="w-full p-1 border border-gray-300 rounded-md focus:ring-violet-500 focus:border-violet-500 text-red-700"
+                               data-index="${index}" data-field="shippingCostWithVAT" oninput="window.updateRowProfit(this)">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 vat-exclusive-cell" id="totalProfit-${index}">0.00</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 vat-exclusive-cell" id="profitFromSalePricePercent-${index}">0.00%</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <input type="number" value="${order.desiredProfitPercent.toFixed(2)}" class="w-full p-1 border border-gray-300 rounded-md focus:ring-violet-500 focus:border-violet-500 text-blue-700"
+                               data-index="${index}" data-field="desiredProfitPercent" oninput="window.updateRowProfit(this)">
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 vat-exclusive-cell" id="profitFromCostPricePercent-${index}">0.00%</td>
+                `;
+
+                // Append the newly created row to the table body
+                if (profitTableBody) profitTableBody.appendChild(rowElement);
+            }
+
+            // After processing all rows, check if any valid data was found
+            if (hasValidData) {
+                if (resultsContainer) resultsContainer.classList.remove('hidden'); // If yes, show the results container
+                // Trigger initial calculations and summaries for all rows
+                window.ordersData.forEach((order, index) => {
+                    // Trigger update for each row to ensure calculations are done and saved, and summaries updated
+                    // We can trigger from either productCost or productCostWithVAT, as updateRowProfit handles both.
+                    const inputElement = document.querySelector(`#order-row-${index} input[data-field="productCost"]`);
+                    if (inputElement) {
+                        window.updateRowProfit(inputElement);
+                    }
+                });
+                filterTable(); // Apply initial filter (empty search term shows all) and update summaries
+                // Also save a snapshot locally for quick reloads
+                saveSnapshotToLocal();
+            } else {
+                // If no valid data, display an informative message
+                if (errorMessage) {
+                    errorMessage.textContent = 'לא נמצאו נתונים רלוונטיים בקובץ. ודא שהעמודות "מספר הזמנה", "שם מוצר", "סכום ההזמנה" ו"מחיר" קיימות ומכילות ערכים תקינים.';
+                    errorMessage.classList.remove('hidden');
+                }
+                if (resultsContainer) resultsContainer.classList.add('hidden'); // Keep the results container hidden
+                if (summarySection) summarySection.classList.add('hidden'); // Ensure summary is hidden
+            }
+            if (loadingMessage) loadingMessage.classList.add('hidden'); // Hide loading message
+        }
+
+        /**
+         * Updates the profit calculations for a specific row when an input field changes.
+         * Also saves the entire order data to Firestore.
+         * @param {HTMLInputElement} inputElement - The input field that triggered the event.
+         */
+        window.updateRowProfit = async function(inputElement) { // Made global for oninput attribute
+            const index = inputElement.dataset.index;
+            const field = inputElement.dataset.field;
+            const value = parseFloat(inputElement.value) || 0; // Get the numeric value, default to 0
+
+            const order = window.ordersData[index];
+
+            // Update the stored data and other linked input fields
+            if (field === 'productCost') {
+                order.productCost = value;
+                order.productCostWithVAT = value * (1 + window.VAT_RATE);
+                const productCostWithVATInput = document.querySelector(`#order-row-${index} input[data-field="productCostWithVAT"]`);
+                if (productCostWithVATInput) productCostWithVATInput.value = order.productCostWithVAT.toFixed(2);
+                // When productCost changes, update desiredProfitPercent for display
+                if (order.orderTotalBeforeVAT !== 0) {
+                    // Recalculate desiredProfitPercent based on current productCost and customerPaidShippingBeforeVAT
+                    // Ensure denominator (productPriceBeforeVAT) is not zero to avoid division by zero
+                    const productSalePriceBeforeVAT = order.orderTotalBeforeVAT - order.customerPaidShippingBeforeVAT;
+                    if (productSalePriceBeforeVAT !== 0) {
+                        order.desiredProfitPercent = ((productSalePriceBeforeVAT - order.productCost) / productSalePriceBeforeVAT) * 100;
+                    } else {
+                        order.desiredProfitPercent = 0;
+                    }
+                } else {
+                    order.desiredProfitPercent = 0;
+                }
+                const desiredProfitPercentInputForThisRow = document.querySelector(`#order-row-${index} input[data-field="desiredProfitPercent"]`);
+                if (desiredProfitPercentInputForThisRow) desiredProfitPercentInputForThisRow.value = order.desiredProfitPercent.toFixed(2);
+
+            } else if (field === 'productCostWithVAT') {
+                order.productCostWithVAT = value;
+                order.productCost = value / (1 + window.VAT_RATE);
+                const productCostInput = document.querySelector(`#order-row-${index} input[data-field="productCost"]`);
+                if (productCostInput) productCostInput.value = order.productCost.toFixed(2);
+                // When productCostWithVAT changes, update desiredProfitPercent for display
+                if (order.orderTotalBeforeVAT !== 0) {
+                    const productSalePriceBeforeVAT = order.orderTotalBeforeVAT - order.customerPaidShippingBeforeVAT;
+                    if (productSalePriceBeforeVAT !== 0) {
+                        order.desiredProfitPercent = ((productSalePriceBeforeVAT - order.productCost) / productSalePriceBeforeVAT) * 100;
+                    } else {
+                        order.desiredProfitPercent = 0;
+                    }
+                } else {
+                    order.desiredProfitPercent = 0;
+                }
+                const desiredProfitPercentInputForThisRow = document.querySelector(`#order-row-${index} input[data-field="desiredProfitPercent"]`);
+                if (desiredProfitPercentInputForThisRow) desiredProfitPercentInputForThisRow.value = order.desiredProfitPercent.toFixed(2);
+
+            } else if (field === 'shippingCost') {
+                order.shippingCost = value;
+                order.shippingCostWithVAT = value * (1 + window.VAT_RATE);
+                const shippingCostWithVATInput = document.querySelector(`#order-row-${index} input[data-field="shippingCostWithVAT"]`);
+                if (shippingCostWithVATInput) shippingCostWithVATInput.value = order.shippingCostWithVAT.toFixed(2);
+            } else if (field === 'shippingCostWithVAT') {
+                order.shippingCostWithVAT = value;
+                order.shippingCost = value / (1 + window.VAT_RATE);
+                const shippingCostInput = document.querySelector(`#order-row-${index} input[data-field="shippingCost"]`);
+                if (shippingCostInput) shippingCostInput.value = order.shippingCost.toFixed(2);
+            } else if (field === 'desiredProfitPercent') { // Handle desiredProfitPercent input
+                order.desiredProfitPercent = value;
+                // Recalculate productCost based on desired profit percent
+                const productSalePriceBeforeVAT = order.orderTotalBeforeVAT - order.customerPaidShippingBeforeVAT;
+                if (productSalePriceBeforeVAT !== 0) {
+                    // Corrected Formula: productCost = productSalePriceBeforeVAT * (1 - desiredProfitPercent / 100)
+                    let newProductCost = productSalePriceBeforeVAT * (1 - order.desiredProfitPercent / 100);
+                    
+                    // Ensure productCost doesn't go below zero
+                    if (newProductCost < 0) {
+                        newProductCost = 0;
+                    }
+                    order.productCost = newProductCost;
+                    order.productCostWithVAT = newProductCost * (1 + window.VAT_RATE);
+                    
+                    // Update the productCost input fields in the DOM
+                    const productCostInput = document.querySelector(`#order-row-${index} input[data-field="productCost"]`);
+                    const productCostWithVATInput = document.querySelector(`#order-row-${index} input[data-field="productCostWithVAT"]`);
+                    if (productCostInput) productCostInput.value = order.productCost.toFixed(2);
+                    if (productCostWithVATInput) productCostWithVATInput.value = order.productCostWithVAT.toFixed(2);
+                } else {
+                    order.productCost = 0;
+                    order.productCostWithVAT = 0;
+                }
+            }
+
+
+            // Get the current values for calculation (always use before VAT for calculations)
+            const orderTotalBeforeVAT = order.orderTotalBeforeVAT;
+            const productCost = order.productCost;
+            const shippingCost = order.shippingCost;
+            const customerPaidShippingBeforeVAT = order.customerPaidShippingBeforeVAT; // Get customer paid shipping before VAT
+
+            // Perform the profit calculations
+            order.totalProfit = orderTotalBeforeVAT - productCost - shippingCost;
+
+            // Calculate percentage profits based on new formulas
+            // profitFromSalePricePercent: ((סכום ההזמנה לפני מע"מ - מחיר משלוח ששולם ע"י לקוח לפני מע"מ) - מחיר עלות לפני מע"מ) / (סכום ההזמנה לפני מע"מ - מחיר משלוח (ששולם ע"י לקוח, לפני מע"מ)) * 100.
+            const productSalePriceBeforeVAT = orderTotalBeforeVAT - customerPaidShippingBeforeVAT;
+            order.profitFromSalePricePercent = (productSalePriceBeforeVAT !== 0) ? ((productSalePriceBeforeVAT - productCost) / productSalePriceBeforeVAT) * 100 : 0;
+            
+            // Corrected formula for profitFromCostPricePercent
+            order.profitFromCostPricePercent = (productCost !== 0) ? ((orderTotalBeforeVAT - productCost - shippingCost) / productCost) * 100 : 0;
+
+
+            // Update the displayed profit values in the table row
+            const totalProfitElement = document.getElementById(`totalProfit-${index}`);
+            const profitFromSalePricePercentElement = document.getElementById(`profitFromSalePricePercent-${index}`);
+            const profitFromCostPricePercentElement = document.getElementById(`profitFromCostPricePercent-${index}`);
+
+            if (totalProfitElement) totalProfitElement.textContent = order.totalProfit.toFixed(2);
+            if (profitFromSalePricePercentElement) profitFromSalePricePercentElement.textContent = order.profitFromSalePricePercent.toFixed(2) + '%';
+            if (profitFromCostPricePercentElement) profitFromCostPricePercentElement.textContent = order.profitFromCostPricePercent.toFixed(2) + '%';
+
+            // Save updated costs and original Excel data to Firestore
+            if (window.isAuthReady && window.db && window.userId && order.orderNumber) {
+                try {
+                    const costsCollection = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${String(monthSelector.value).padStart(2, '0')}-${yearSelector.value}`); // Path now includes month-year
+                    await setDoc(doc(costsCollection, order.orderNumber), {
+                        orderNumber: order.orderNumber,
+                        productName: order.productName,
+                        orderTotalWithVAT: order.orderTotalWithVAT,
+                        customerPaidShippingWithVAT: order.customerPaidShippingWithVAT,
+                        orderTotalBeforeVAT: order.orderTotalBeforeVAT, // Save derived values too
+                        productPriceBeforeVAT: order.productPriceBeforeVAT,
+                        customerPaidShippingBeforeVAT: order.customerPaidShippingBeforeVAT,
+                        productCost: order.productCost, // Save before VAT
+                        productCostWithVAT: order.productCostWithVAT, // Save with VAT
+                        shippingCost: order.shippingCost, // Save before VAT
+                        shippingCostWithVAT: order.shippingCostWithVAT, // Save with VAT
+                        desiredProfitPercent: order.desiredProfitPercent // Save desired profit percent
+                    });
+                } catch (error) {
+                    console.error("Error saving data for order", order.orderNumber, ":", error);
+                    // Optionally, show a temporary message to the user about save failure
+                }
+            }
+
+            // Always save a local snapshot as well
+            saveSnapshotToLocal();
+
+            // After updating a single row, re-filter the table to ensure summaries are correct
+            filterTable();
+        }
+
+        /**
+         * Filters the table rows based on the search input and updates summaries.
+         */
+        function filterTable() {
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            const rows = profitTableBody.querySelectorAll('tr');
+            let visibleOrders = [];
+
+            rows.forEach((row, index) => {
+                const orderNumberCell = row.querySelector('td:first-child'); // Assuming order number is the first cell
+                const orderNumber = orderNumberCell ? orderNumberCell.textContent.toLowerCase() : '';
+
+                if (orderNumber.includes(searchTerm)) {
+                    row.style.display = ''; // Show row
+                    // Add the corresponding order data to visibleOrders if it's visible
+                    if (window.ordersData[index]) { // Ensure index exists in ordersData
+                        visibleOrders.push(window.ordersData[index]);
+                    }
+                } else {
+                    row.style.display = 'none'; // Hide row
+                }
+            });
+
+            // Update summaries based on visible orders
+            updateSummaries(visibleOrders);
+        }
+
+        /**
+         * Calculates and displays all overall summaries (before and after manual input).
+         * @param {Array<Object>} [dataToSummarize=window.ordersData] - Optional: Array of orders to summarize.
+         * If not provided, uses all loaded orders.
+         */
+        function updateSummaries(dataToSummarize = window.ordersData) {
+            let totalNetProfit = 0;
+            let totalFinalRevenue = 0;
+
+            let totalInitialRevenue = 0;
+            let totalInitialCustomerShippingProfit = 0;
+
+            let totalInitialRevenueWithVAT = 0;
+            let totalInitialCustomerShippingProfitWithVAT = 0;
+            let totalFinalRevenueWithVAT = 0;
+            let totalFinalNetProfitWithVAT = 0;
+
+
+            dataToSummarize.forEach(order => {
+                // For "After Manual Input" Summary (before VAT)
+                totalNetProfit += order.totalProfit;
+                totalFinalRevenue += order.orderTotalBeforeVAT;
+
+                // For "Before Manual Input" Summary (before VAT)
+                totalInitialRevenue += order.orderTotalBeforeVAT;
+                totalInitialCustomerShippingProfit += order.customerPaidShippingBeforeVAT;
+
+                // For VAT inclusive summaries
+                totalInitialRevenueWithVAT += order.orderTotalWithVAT;
+                totalInitialCustomerShippingProfitWithVAT += order.customerPaidShippingWithVAT;
+                totalFinalRevenueWithVAT += order.orderTotalWithVAT; // Same as initial revenue with VAT
+            });
+
+            // Calculate final net profit with VAT
+            totalFinalNetProfitWithVAT = totalNetProfit * (1 + window.VAT_RATE);
+
+
+            // Update "After Manual Input" summary
+            if (overallTotalProfitElement) overallTotalProfitElement.textContent = totalNetProfit.toFixed(2);
+            if (finalRevenueSummary) finalRevenueSummary.textContent = totalFinalRevenue.toFixed(2);
+            if (finalNetProfitSummary) finalNetProfitSummary.textContent = totalNetProfit.toFixed(2);
+            const finalNetProfitPercent = (totalFinalRevenue !== 0) ? (totalNetProfit / totalFinalRevenue) * 100 : 0;
+            if (finalNetProfitPercentSummary) finalNetProfitPercentSummary.textContent = finalNetProfitPercent.toFixed(2) + '%';
+
+            // Update "Before Manual Input" summary
+            if (initialRevenueSummary) initialRevenueSummary.textContent = totalInitialRevenue.toFixed(2);
+            if (initialCustomerShippingProfitSummary) initialCustomerShippingProfitSummary.textContent = totalInitialCustomerShippingProfit.toFixed(2);
+            const initialCustomerShippingProfitPercent = (totalInitialRevenue !== 0) ? (totalInitialCustomerShippingProfit / totalInitialRevenue) * 100 : 0;
+            if (initialCustomerShippingProfitPercentSummary) initialCustomerShippingProfitPercentSummary.textContent = initialCustomerShippingProfitPercent.toFixed(2) + '%';
+
+            // Update New VAT inclusive summaries
+            if (initialRevenueSummaryWithVAT) initialRevenueSummaryWithVAT.textContent = totalInitialRevenueWithVAT.toFixed(2);
+            if (initialCustomerShippingProfitSummaryWithVAT) initialCustomerShippingProfitSummaryWithVAT.textContent = totalInitialCustomerShippingProfitWithVAT.toFixed(2);
+            if (finalRevenueSummaryWithVAT) finalRevenueSummaryWithVAT.textContent = totalFinalRevenueWithVAT.toFixed(2);
+            if (finalNetProfitSummaryWithVAT) finalNetProfitSummaryWithVAT.textContent = totalFinalNetProfitWithVAT.toFixed(2);
+
+
+            // Show the summary section
+            if (summarySection) summarySection.classList.remove('hidden');
+        }
+
+        // -------- Local persistence helpers --------
+        function currentMonthYearPath() {
+            const selectedMonth = monthSelector ? String(monthSelector.value).padStart(2, '0') : '';
+            const selectedYear = yearSelector ? yearSelector.value : '';
+            return `${selectedYear}-${selectedMonth}`;
+        }
+        function localKey() {
+            const uid = window.userId || 'local-user';
+            return `pc:snapshot:${uid}:${currentMonthYearPath()}`;
+        }
+        function saveSnapshotToLocal() {
+            try {
+                const snapshot = JSON.stringify(window.ordersData || []);
+                localStorage.setItem(localKey(), snapshot);
+            } catch (e) {
+                console.warn('Local snapshot save failed:', e);
+            }
+        }
+        function loadSnapshotFromLocal(monthYearPath) {
+            try {
+                const uid = window.userId || 'local-user';
+                const key = `pc:snapshot:${uid}:${monthYearPath}`;
+                const raw = localStorage.getItem(key);
+                if (!raw) return [];
+                const arr = JSON.parse(raw);
+                return Array.isArray(arr) ? arr : [];
+            } catch (e) {
+                console.warn('Local snapshot load failed:', e);
+                return [];
+            }
+        }
+
+        /**
+         * Calls the Gemini API to get profit insights based on current summary data.
+         */
+        async function getProfitInsights() {
+            if (!window.ordersData || window.ordersData.length === 0) {
+                if (profitInsightsOutput) profitInsightsOutput.innerHTML = '<p class="text-gray-600">אין נתונים לניתוח. אנא העלה קובץ ועדכן עלויות.</p>';
+                return;
+            }
+
+            if (getInsightsButton) getInsightsButton.disabled = true;
+            if (profitInsightsOutput) profitInsightsOutput.innerHTML = '<p class="text-blue-600">טוען תובנות AI... <span class="animate-pulse">...</span></p>';
+
+            const currentSummary = {
+                totalRevenueBeforeVAT: parseFloat(initialRevenueSummary.textContent),
+                totalNetProfitBeforeVAT: parseFloat(finalNetProfitSummary.textContent),
+                netProfitPercent: parseFloat(finalNetProfitPercentSummary.textContent.replace('%', '')),
+                totalCustomerShippingProfitBeforeVAT: parseFloat(initialCustomerShippingProfitSummary.textContent),
+                customerShippingProfitPercent: parseFloat(initialCustomerShippingProfitPercentSummary.textContent.replace('%', ''))
+            };
+
+            const prompt = `
+            נתוני רווחיות כלליים של חנות מסחר אלקטרוני:
+            מחזור כולל (לפני מע"מ): ${currentSummary.totalRevenueBeforeVAT.toFixed(2)} ש"ח
+            סה"כ רווח נקי (לפני מע"מ): ${currentSummary.totalNetProfitBeforeVAT.toFixed(2)} ש"ח
+            אחוז רווחיות נקי: ${currentSummary.netProfitPercent.toFixed(2)}%
+            סה"כ רווח משלוח ששולם ע"י לקוח (לפני מע"מ): ${currentSummary.totalCustomerShippingProfitBeforeVAT.toFixed(2)} ש"ח
+            אחוז רווחיות משלוח (ששולם ע"י לקוח): ${currentSummary.customerShippingProfitPercent.toFixed(2)}%
+
+            אנא ספק ניתוח קצר של נתוני הרווחיות הללו (עד 100 מילים) והמלצה אחת או שתיים לשיפור הרווחיות.
+            כתוב בעברית.
+            `;
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = ""; // Canvas will automatically provide it in runtime
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    if (profitInsightsOutput) profitInsightsOutput.innerHTML = `<p class="text-gray-800">${text}</p>`;
+                } else {
+                    console.error("Gemini API response structure unexpected:", result);
+                    if (profitInsightsOutput) profitInsightsOutput.innerHTML = '<p class="text-red-500">שגיאה בקבלת תובנות. נסה שוב מאוחר יותר.</p>';
+                }
+            } catch (error) {
+                console.error("Error fetching profit insights:", error);
+                if (profitInsightsOutput) profitInsightsOutput.innerHTML = '<p class="text-red-500">שגיאה ברשת או ב-API. נסה שוב מאוחר יותר.</p>';
+            } finally {
+                if (getInsightsButton) getInsightsButton.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
