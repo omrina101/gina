@@ -488,7 +488,8 @@
 
             try {
                 // Construct the collection path including the selected month and year
-                const ordersCollectionRef = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${monthYearPath}`);
+                // Use a proper collection path: monthYear is a document, items is the subcollection
+                const ordersCollectionRef = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${monthYearPath}/items`);
                 const querySnapshot = await getDocs(ordersCollectionRef);
                 const loadedData = [];
                 querySnapshot.forEach(docSnap => {
@@ -556,7 +557,7 @@
                     if (loadingMessage) loadingMessage.classList.remove('hidden');
                     try {
                         // Construct the collection path including the selected month and year
-                        const ordersCollectionRef = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${monthYearPath}`);
+                        const ordersCollectionRef = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${monthYearPath}/items`);
                         const querySnapshot = await getDocs(ordersCollectionRef);
                         const deletePromises = [];
                         querySnapshot.forEach(docSnap => {
@@ -570,11 +571,16 @@
                         if (summarySection) summarySection.classList.add('hidden');
                         window.ordersData = [];
                         if (overallTotalProfitElement) overallTotalProfitElement.textContent = '0.00';
+                        // Clear local snapshot as well
+                        clearLocalSnapshotForMonth(monthYearPath);
                         if (loadingMessage) loadingMessage.textContent = `כל הנתונים עבור ${selectedMonth}/${selectedYear} אופסו בהצלחה.`;
                     } catch (error) {
                         console.error("Error resetting data:", error);
+                        // Attempt to clear local snapshot anyway
+                        clearLocalSnapshotForMonth(monthYearPath);
                         if (errorMessage) {
-                            errorMessage.textContent = 'שגיאה באיפוס נתונים. נסה שוב מאוחר יותר.';
+                            const msg = (error && (error.message || error.code)) ? `שגיאה באיפוס נתונים: ${error.message || error.code}. בדוק הרשאות Firestore והתחברות.` : 'שגיאה באיפוס נתונים. נסה שוב מאוחר יותר.';
+                            errorMessage.textContent = msg;
                             errorMessage.classList.remove('hidden');
                         }
                     } finally {
@@ -1201,7 +1207,10 @@
             // Save updated costs and original Excel data to Firestore
             if (window.isAuthReady && window.db && window.userId && order.orderNumber) {
                 try {
-                    const costsCollection = collection(window.db, `artifacts/${window.appId}/users/${window.userId}/orders/${String(monthSelector.value).padStart(2, '0')}-${yearSelector.value}`); // Path now includes month-year
+                    const costsCollection = collection(
+                        window.db,
+                        `artifacts/${window.appId}/users/${window.userId}/orders/${yearSelector.value}-${String(monthSelector.value).padStart(2, '0')}/items`
+                    ); // Path uses YYYY-MM/items consistently
                     await setDoc(doc(costsCollection, order.orderNumber), {
                         orderNumber: order.orderNumber,
                         productName: order.productName,
@@ -1346,6 +1355,15 @@
             } catch (e) {
                 console.warn('Local snapshot load failed:', e);
                 return [];
+            }
+        }
+        function clearLocalSnapshotForMonth(monthYearPath) {
+            try {
+                const uid = window.userId || 'local-user';
+                const key = `pc:snapshot:${uid}:${monthYearPath}`;
+                localStorage.removeItem(key);
+            } catch (e) {
+                console.warn('Local snapshot clear failed:', e);
             }
         }
 
