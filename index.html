@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>מחשבון רווחיות הזמנות</title>
+    <meta name="color-scheme" content="light" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Tailwind CSS for responsive and modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SheetJS library for reading Excel files -->
@@ -12,10 +16,14 @@
     <style>
         /* Custom styles for Hebrew font and right-to-left layout */
         body {
-            font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
-            direction: rtl; /* Set overall direction to right-to-left for Hebrew */
-            text-align: right; /* Align text to the right by default */
+            font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            direction: rtl;
+            text-align: right;
+            background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+            min-height: 100vh;
         }
+        .app-container { max-width: 1200px; margin: 0 auto; }
+        .card { background: rgba(255,255,255,0.96); backdrop-filter: blur(6px); border-radius: 16px; box-shadow: 0 10px 25px rgba(2,6,23,0.06); }
         /* Basic table styling */
         table {
             width: 100%;
@@ -29,11 +37,15 @@
             word-wrap: break-word; /* Allow long words to break */
             min-width: 60px; /* Minimum width for all columns */
         }
-        th {
-            background-color: #f8fafc; /* Light background for table headers */
-            position: relative; /* Needed for resizer positioning */
-            width: auto; /* Allow browser to determine initial width based on content hints */
+        thead th {
+            background-color: rgba(248,250,252,0.95);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            width: auto;
         }
+        tbody tr:nth-child(even) { background-color: #fafafa; }
+        tbody tr:hover { background-color: #f1f5f9; }
         /* Specific styling for product name cell to truncate long text */
         .product-name-cell {
             max-width: 280px; /* Increased max-width for product name column */
@@ -55,19 +67,15 @@
             position: absolute;
             left: 0; /* Position on the left side of the th for RTL */
             top: 0;
-            width: 5px; /* Width of the draggable area */
+            width: 6px; /* Width of the draggable area */
             height: 100%;
             background: transparent; /* Make it invisible initially */
             cursor: col-resize;
             z-index: 1; /* Ensure it's clickable */
         }
-        .resizer:hover {
-            background-color: #a0aec0; /* Light gray on hover */
-        }
+        .resizer:hover { background-color: #94a3b8; }
         /* Add a class when dragging to make it more visible */
-        .resizing {
-            background-color: #4299e1; /* Blue when dragging */
-        }
+        .resizing { background-color: #60a5fa; }
 
         /* Modal styles */
         .modal {
@@ -117,9 +125,17 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 p-4">
-    <div class="w-full mx-auto bg-white p-6 rounded-lg shadow-md"> <!-- Changed max-w-4xl to w-full -->
-        <h1 class="text-2xl font-bold mb-6 text-center">מחשבון רווחיות הזמנות</h1>
+<body>
+    <!-- Top banner -->
+    <header class="bg-gradient-to-l from-indigo-600 via-violet-600 to-fuchsia-500 text-white py-8 shadow-md">
+        <div class="app-container px-4">
+            <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight mb-1">מחשבון רווחיות הזמנות</h1>
+            <p class="opacity-90">מחשבון חכם עם שמירה לפי חודש/שנה, תמיכה בקבצי Excel/XML, וחישובי מע"מ</p>
+        </div>
+    </header>
+
+    <div class="app-container px-4 -mt-8">
+        <div class="card p-6">
 
         <div class="mb-4">
             <label for="excelFile" class="block text-gray-700 text-sm font-bold mb-2">
@@ -135,7 +151,7 @@
             <p id="loadingMessage" class="text-blue-600 text-sm mt-2">טוען Firebase...</p>
         </div>
 
-        <div class="mb-4 text-center flex flex-wrap justify-start gap-4"> <!-- Changed justify-end to justify-start for RTL right alignment -->
+        <div class="mb-4 text-center flex flex-wrap justify-start gap-4 items-center">
             <!-- Search input is now first in the flex container for RTL right alignment -->
             <div class="relative">
                 <input type="text" id="searchInput" placeholder="חפש לפי מספר הזמנה..."
@@ -150,25 +166,26 @@
             <!-- Removed global desiredProfitPercentInput -->
 
             <button id="resetDataButton" onclick="window.resetAllData()"
-                    class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+                    class="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-semibold py-2 px-4 rounded-full shadow-lg transition duration-300 ease-in-out">
                 איפוס כל הנתונים השמורים
             </button>
         </div>
 
         <div class="mb-4 flex flex-wrap justify-start gap-4 items-center">
             <label for="monthSelector" class="block text-gray-700 text-sm font-bold">חודש:</label>
-            <select id="monthSelector" class="p-2 border border-gray-300 rounded-md"></select>
+            <select id="monthSelector" class="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-400"></select>
             
             <label for="yearSelector" class="block text-gray-700 text-sm font-bold">שנה:</label>
-            <select id="yearSelector" class="p-2 border border-gray-300 rounded-md"></select>
+            <select id="yearSelector" class="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-400"></select>
         </div>
 
         <div id="resultsContainer" class="mt-8 hidden">
             <h2 class="text-xl font-semibold mb-4">תוצאות חישוב הרווחיות</h2>
-            <div class="overflow-x-auto rounded-lg border border-gray-200">
-                <table id="profitTable" class="min-w-full divide-y divide-gray-200">
+            <div class="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+                <table id="profitTable" class="min-w-full">
                     <thead class="bg-gray-50">
                         <tr>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider relative">מספר סידורי<div class="resizer"></div></th>
                             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider relative">מספר הזמנה<div class="resizer"></div></th>
                             <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider relative">שם מוצר<div class="resizer"></div></th>
                             <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider relative vat-inclusive-header">סכום ההזמנה (כולל מע"מ)<div class="resizer"></div></th>
@@ -188,7 +205,7 @@
                     </tbody>
                     <tfoot class="bg-gray-100">
                         <tr>
-                            <td colspan="9" class="px-6 py-3 text-right text-sm font-bold text-gray-700">סה"כ רווח כולל (לפני מע"מ):</td> <!-- Colspan updated to 9 -->
+                            <td colspan="10" class="px-6 py-3 text-right text-sm font-bold text-gray-700">סה"כ רווח כולל (לפני מע"מ):</td>
                             <td id="overallTotalProfit" class="px-6 py-3 text-right text-sm font-bold text-gray-900 vat-exclusive-cell">0.00</td>
                             <td colspan="2" class="px-6 py-3"></td>
                         </tr>
@@ -275,6 +292,7 @@
         window.userId = null;
         window.isAuthReady = false;
         window.ordersData = []; // Global store for all loaded order data
+        window.productCostMemory = {}; // Global product cost memory { normalizedName: costBeforeVAT }
 
         // Define VAT rate globally as it's used in processAndDisplayData
         window.VAT_RATE = 0.18; // 18% VAT
@@ -388,6 +406,7 @@
                         window.isAuthReady = true;
                         console.log("Firebase authenticated. User ID:", window.userId);
                         if (loadingMessage) loadingMessage.textContent = 'Firebase טעון ומוכן. טוען נתונים שמורים...';
+                        await loadProductCostMemory(); // Load product cost memory once authenticated
                         await loadSavedData(); // Load data once authenticated
                     } else {
                         try {
@@ -994,7 +1013,7 @@
                     orderTotalBeforeVAT: orderTotalBeforeVAT,
                     productPriceBeforeVAT: productPriceBeforeVAT,
                     customerPaidShippingBeforeVAT: customerPaidShippingBeforeVAT,
-                    productCost: 0, // Default to 0, will be overridden if saved data exists
+                    productCost: 0, // Default to 0, may be overridden by memory or saved data
                     productCostWithVAT: 0, // New field
                     shippingCost: 0, // Default to 0, will be overridden if saved data exists
                     shippingCostWithVAT: 0, // New field
@@ -1003,6 +1022,16 @@
                     profitFromSalePricePercent: 0,
                     profitFromCostPricePercent: 0
                 };
+                // Apply remembered product cost if available and not already saved
+                try {
+                    const memKey = normalizeProductKey(order.productName);
+                    const remembered = window.productCostMemory[memKey];
+                    if (!loadedSavedData && remembered && (!order.productCost || order.productCost === 0)) {
+                        order.productCost = parseFloat(remembered) || 0;
+                        order.productCostWithVAT = order.productCost * (1 + window.VAT_RATE);
+                    }
+                } catch (_) {}
+
                 window.ordersData.push(order); // Add to global ordersData
 
                 // If loading from saved data, pre-fill costs and desired profit percent
@@ -1027,6 +1056,7 @@
 
                 // Populate the inner HTML of the row with table data cells
                 rowElement.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${orderNumber}</td>
                     <td class="px-6 py-4 text-sm text-gray-900 product-name-cell">${productName}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 vat-inclusive-cell">${orderTotalWithVAT.toFixed(2)}</td>
@@ -1105,6 +1135,8 @@
                 order.productCostWithVAT = value * (1 + window.VAT_RATE);
                 const productCostWithVATInput = document.querySelector(`#order-row-${index} input[data-field="productCostWithVAT"]`);
                 if (productCostWithVATInput) productCostWithVATInput.value = order.productCostWithVAT.toFixed(2);
+                // Update memory when user sets a product cost directly
+                await saveProductCostMemory(order.productName, order.productCost);
                 // When productCost changes, update desiredProfitPercent for display
                 if (order.orderTotalBeforeVAT !== 0) {
                     // Recalculate desiredProfitPercent based on current productCost and customerPaidShippingBeforeVAT
@@ -1126,6 +1158,8 @@
                 order.productCost = value / (1 + window.VAT_RATE);
                 const productCostInput = document.querySelector(`#order-row-${index} input[data-field="productCost"]`);
                 if (productCostInput) productCostInput.value = order.productCost.toFixed(2);
+                // Update memory when user sets a product cost via VAT-inclusive field
+                await saveProductCostMemory(order.productName, order.productCost);
                 // When productCostWithVAT changes, update desiredProfitPercent for display
                 if (order.orderTotalBeforeVAT !== 0) {
                     const productSalePriceBeforeVAT = order.orderTotalBeforeVAT - order.customerPaidShippingBeforeVAT;
@@ -1364,6 +1398,63 @@
                 localStorage.removeItem(key);
             } catch (e) {
                 console.warn('Local snapshot clear failed:', e);
+            }
+        }
+
+        // -------- Product Cost Memory (remember cost by product name) --------
+        function normalizeProductKey(name) {
+            if (!name) return '';
+            return String(name).trim().toLowerCase().replace(/\s+/g, ' ');
+        }
+        function productCostMemoryKey() {
+            const uid = window.userId || 'local-user';
+            return `pc:productCostMemory:${uid}`;
+        }
+        async function loadProductCostMemory() {
+            try {
+                // Try Firestore first
+                if (window.isAuthReady && window.db && window.userId) {
+                    const memDocRef = doc(window.db, `artifacts/${window.appId}/users/${window.userId}/meta/productCostMemory`);
+                    const snap = await getDoc(memDocRef);
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        if (data && data.map && typeof data.map === 'object') {
+                            window.productCostMemory = data.map;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore Firestore errors and try local
+            } finally {
+                // Merge with local stored memory (local wins if newer value exists)
+                try {
+                    const raw = localStorage.getItem(productCostMemoryKey());
+                    if (raw) {
+                        const localMap = JSON.parse(raw);
+                        if (localMap && typeof localMap === 'object') {
+                            window.productCostMemory = { ...window.productCostMemory, ...localMap };
+                        }
+                    }
+                } catch (_) {}
+            }
+        }
+        async function saveProductCostMemory(productName, costBeforeVAT) {
+            try {
+                const key = normalizeProductKey(productName);
+                if (!key) return;
+                const numericCost = parseFloat(costBeforeVAT) || 0;
+                if (numericCost <= 0) return;
+                // Update in-memory map
+                window.productCostMemory[key] = numericCost;
+                // Save locally
+                localStorage.setItem(productCostMemoryKey(), JSON.stringify(window.productCostMemory));
+                // Save to Firestore (best effort)
+                if (window.isAuthReady && window.db && window.userId) {
+                    const memDocRef = doc(window.db, `artifacts/${window.appId}/users/${window.userId}/meta/productCostMemory`);
+                    await setDoc(memDocRef, { map: window.productCostMemory }, { merge: true });
+                }
+            } catch (_) {
+                // Ignore save errors silently
             }
         }
 
