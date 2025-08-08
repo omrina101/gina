@@ -512,7 +512,11 @@
                 const querySnapshot = await getDocs(ordersCollectionRef);
                 const loadedData = [];
                 querySnapshot.forEach(docSnap => {
-                    loadedData.push(docSnap.data());
+                    const data = docSnap.data();
+                    // Extra guard: ensure we only take docs for this month/year
+                    if (!data || data.monthYear === undefined || data.monthYear === monthYearPath) {
+                        loadedData.push(data);
+                    }
                 });
 
                 if (loadedData.length > 0) {
@@ -1257,7 +1261,8 @@
                         productCostWithVAT: order.productCostWithVAT, // Save with VAT
                         shippingCost: order.shippingCost, // Save before VAT
                         shippingCostWithVAT: order.shippingCostWithVAT, // Save with VAT
-                        desiredProfitPercent: order.desiredProfitPercent // Save desired profit percent
+                        desiredProfitPercent: order.desiredProfitPercent, // Save desired profit percent
+                        monthYear: `${yearSelector.value}-${String(monthSelector.value).padStart(2, '0')}`
                     });
                 } catch (error) {
                     console.error("Error saving data for order", order.orderNumber, ":", error);
